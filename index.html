@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Flabber</title>
+    <link rel="manifest" href="/manifest.json">
+    <style>
+        body {
+            transform: scaleX(-1)
+        }
+        .rect {
+            position: absolute;
+            border-radius: 40%;
+            animation: blink 2s ease-out;
+            box-shadow: inset 0 0 50px white;
+        }
+
+        @keyframes blink {
+            from {
+                transform: scale(0.8);
+                opacity: 0.2;
+            }
+
+            to {
+                transform: scale(1.7);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <video id="video" muted></video>
+    <canvas style="display: none;" id="c1" width="427" height="240"></canvas>
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+      const socket = io();
+      const utter = new SpeechSynthesisUtterance('');
+      const colors = ['blue', 'green', 'red', 'pink'];
+
+      // Prefer camera resolution nearest to 1280x720.
+      const constraints = {audio: true, video: {width: 1280, height: 720}};
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('c1');
+      const ctx = canvas.getContext('2d');
+      const computeFrame = () => {
+        ctx.drawImage(video, 0, 0, 427, 240);
+        return canvas.toDataURL('image/jpeg', 0.7);
+      };
+
+      const videoToCanvas = mediaStream => {
+
+
+        video.srcObject = mediaStream;
+        video.onloadedmetadata = () => {
+          video.play();
+          socket.emit('ready');
+
+          let first = true;
+          socket.on('rect', (data) => {
+
+            data.forEach((rect, i) => {
+
+              if (first) {
+                first = false;
+
+                utter.onend = () => {
+                  const recognition = new webkitSpeechRecognition();
+                  recognition.continuous = true;
+                  recognition.lang = 'ru-RU';
+                  recognition.interimResults = true;
+
+                  recognition.onresult = function(event) {
+                    interim_transcript += event.results[0][0].transcript;
+                  };
+
+                  recognition.start();
+
+                  recognition.onerror = () => {
+                    //setTimeout(recognition.start, 500);
+                  };
+                };
+
+                speechSynthesis.speak(utter);
+              }
+
+              const div = document.createElement('div');
+              div.classList.add('rect');
+              document.body.appendChild(div);
+              div.addEventListener('animationend', () => {
+                div.remove();
+              });
+              div.style.top = rect.y * 3 + 'px';
+              div.style.left = rect.x * 3 + 'px';
+              div.style.width = rect.width * 3 + 'px';
+              div.style.height = rect.height * 3 + 'px';
+              div.style.borderColor = colors[i];
+
+            });
+          });
+
+        };
+
+        document.body.addEventListener('click', document.body.requestFullscreen);
+      };
+
+      navigator.mediaDevices
+        .getUserMedia(constraints)
+        .then(videoToCanvas);
+
+      socket.on('getScreenshot', () => {
+        socket.emit('screenshot', computeFrame());
+      });
+    </script>
+
+</body>
+</html>
